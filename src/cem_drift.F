@@ -195,6 +195,36 @@ c---------------------------------------------------------------------
         do ic=1,lcdim
             call copy(cnlag(1,ic,1),tmp_cN(1,ic),npts)
         enddo
+      elseif (ifbdf3) then
+
+        do ic=1,lcdim
+            call copy(tmp_cN(1,ic),cN(1,ic),npts)
+        enddo
+        if (istep.eq.1) then ! bdf1 if at the first step
+            call cem_drift_source  
+            call cem_drift_poisson
+            if (ifsteric) then
+              call cem_drift_sem_bdf1_steric
+            else 
+              call cem_drift_sem_bdf1
+            endif
+        elseif (istep.eq.2) then ! bdf2 if at the second step
+            call setbd(bd,2)
+            call setab(ab,2)
+            call cem_drift_source  
+            call cem_drift_poisson
+            call cem_drift_sem_bdf2
+        else 
+            call setbd(bd,3)
+            call setab(ab,3)
+            call cem_drift_source  
+            call cem_drift_poisson
+            call cem_drift_sem_bdf3
+        endif
+        do ic=1,lcdim
+            call copy(cnlag(1,ic,2),cnlag(1,ic,1),npts)
+            call copy(cnlag(1,ic,1),tmp_cN(1,ic),npts)
+        enddo
       elseif (ifbdf1r) then ! Richardson on BDF1
 
         do ic = 1,lcdim ! copy c_{n-1}
@@ -1963,6 +1993,133 @@ c-----------------------------------------------------------------------
       call col3(w_h1,wn,mu_n(1,ic),npts) ! wk_h1n= mu_n * cN
       call axhelm3(wn,potent,w_h1,w_h2,1,1)
       call add2s2 (rescN(1,ic),wn,-1.0*bd(3)*zvalence(ic)*dt,npts)
+
+      return
+      end
+
+c---------------------------------------------------------------------
+      subroutine cem_drift_sem_bdf3
+c---------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'POISSON'
+      include 'DRIFT'
+      include 'ZPER'
+      include 'BCS'
+
+      integer ic
+      npts= lx1*ly1*lz1*nelt 
+
+      call cem_drift_sem_bdf3_init
+
+      do ic = 1,lcdim
+        call cem_drift_rhs_bdf3(ic)
+        call cem_drift_lhs_bdf3(ic)
+      enddo
+
+      return
+      end
+
+c---------------------------------------------------------------------
+      subroutine cem_drift_sem_bdf3_init
+c---------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'POISSON'
+      include 'DRIFT'
+      include 'ZPER'
+      include 'BCS'
+
+      integer ic 
+
+      npts= lx1*ly1*lz1*nelt 
+                 
+      do ic = 1,lcdim
+        call cmult2 (h1c(1,ic),diff_n(1,ic),bd(4)*dt,npts)
+        call rone (h2c(1,ic),npts)
+      enddo
+
+      return
+      end
+c---------------------------------------------------------------------
+      subroutine cem_drift_lhs_bdf3(ic)
+c---------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'POISSON'
+      include 'DRIFT'
+      include 'ZPER'
+      include 'BCS'
+
+      integer  isd,imsh,maxit
+      real     tol
+
+      integer ic
+      real wa (lx1*ly1*lz1*lelt)
+      real wb (lx1*ly1*lz1*lelt)
+
+      call bcneusc0 (rescn(1,ic),mu_n(1,ic),cn(1,ic),npts,ic+1,1)
+
+c...  solve cn
+      
+      call bcneusc (wa,npts,ic+1,-1)
+      call col2 (wa,h1c(1,ic),npts)
+      call add2 (h2c(1,ic),wa,npts)
+      call bcdirsc (cn(1,ic),npts,ic+1)
+      call axhelm3 (wa,cn(1,ic),h1c(1,ic),h2c(1,ic),1,1)
+      call sub3 (wb,rescN(1,ic),wa,npts) 
+      call bcneusc (wa,npts,ic+1,1)
+      call col2 (wa,h1c(1,ic),npts) 
+      call add2 (wb,wa,npts) 
+
+c...  set cggo parameters
+
+      isd = 1
+      imsh = 1
+      maxit = 5000
+      tol = param(22)
+
+      call dssum (wb,lx1,ly1,lz1)
+      call col2 (wb,dmask(1,ic+1),npts)
+      call cggo2(wa,wb,h1c(1,ic),h2c(1,ic)
+     $     ,mult,dmask(1,ic+1),imsh,isd,npts,tol,maxit)
+      call add2 (cn(1,ic),wa,npts)
+
+      return
+      end
+c---------------------------------------------------------------------
+      subroutine cem_drift_rhs_bdf3(ic)
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'POISSON'
+      include 'BCS'
+      real wn(lpts), wp(lpts)
+      real w_h1(lpts),w_h2(lpts)
+      integer ic
+
+      call rzero(w_h2,npts)
+
+      call col3 (wn,cn(1,ic),bm1,npts)
+      call cmult2 (wn,wn,bd(1),npts)
+      call add2s1 (rescN(1,ic),wn,bd(4)*dt,npts)
+      call col3 (wn,cnlag(1,ic,1),bm1,npts)
+      call cmult2 (wn,wn,bd(2),npts)
+      call add2 (rescN(1,ic),wn,npts)
+      call col3 (wn,cnlag(1,ic,2),bm1,npts)
+      call cmult2 (wn,wn,bd(3),npts)
+      call add2 (rescN(1,ic),wn,npts)
+
+      call add3s2(wn,cn(1,ic),cnlag(1,ic,1),ab(1),ab(2),npts)
+      call add2s2(wn,cnlag(1,ic,2),ab(3),npts)
+      call col3(w_h1,wn,mu_n(1,ic),npts) ! wk_h1n= mu_n * cN
+      call axhelm3(wn,potent,w_h1,w_h2,1,1)
+      call add2s2 (rescN(1,ic),wn,-1.0*bd(4)*zvalence(ic)*dt,npts)
 
       return
       end
