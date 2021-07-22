@@ -38,6 +38,7 @@ c     sane.
       ifbdf1 = .false.          ! BDF1 time stepping
       ifbdf1r = .false.         ! BDF1 time stepping with Richardson extrapolation
       ifbdf2 = .false.          ! BDF2 time stepping
+      ifbdf3 = .false.          ! BDF3 time stepping
       ifexp = .false.           ! exponential time stepping
       ifeig = .false.           ! eigenvalue solver
 c TODO: default ifte = true
@@ -66,6 +67,7 @@ c TODO: default ifte = true
       if (param(17).eq.-1) ifbdf1 = .true.
       if (param(17).eq.-11) ifbdf1r = .true.
       if (param(17).eq.-2) ifbdf2 = .true.
+      if (param(17).eq.-3) ifbdf3 = .true.
       if (param(17).lt.0) ifbdf = .true.
 
       if (param(18).eq.1) iffilter = .true.

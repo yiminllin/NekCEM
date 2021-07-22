@@ -5,6 +5,7 @@ c=====================================================================
       parameter (lcdim=ldimt-1)
       common /driftv/
      $     cn (lpts1,lcdim),      ! i-th numeric solution concentration
+     $     cnlag (lpts1,lcdim,2), ! i-th numeric solution concentration in prev steps
      $     scn (lpts1,lcdim),     ! i-th exact solution concentration
      $     cnj (lpts1,3,lcdim),   ! i-th numeric solution currrent flux
      $     gradp (lpts1,3),       ! numeric gradient potential
@@ -14,7 +15,7 @@ c=====================================================================
      $     kcn (lpts1,lcdim),     ! rk substep for cN
      $     wnj (lpts1,3),         ! working array
      $     qbm1 (lpts1)           ! mass matrix
-      real cn,scn,cnj,gradp
+      real cn,cnlag,scn,cnj,gradp
       real rescn,rescnj,errcn
       real kcn,wnj,qbm1
 

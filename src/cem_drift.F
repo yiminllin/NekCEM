@@ -39,6 +39,7 @@ c...  these to be deleted all when IFHEX/IFTET are done
       call rzero (jacm,npts)
 
       call rzero (cN   ,lpts1*lcdim)
+      call rzero (cnlag,lpts1*lcdim*2)
       call rzero (cN1  ,npts)
       call rzero (cP1  ,npts)
       call rzero (cE1  ,npts)
@@ -171,7 +172,29 @@ c---------------------------------------------------------------------
         else 
           call cem_drift_sem_bdf1
         endif
+      elseif (ifbdf2) then
 
+        call setbd(bd,2)
+        call setab(ab,2)
+        do ic=1,lcdim
+            call copy(tmp_cN(1,ic),cN(1,ic),npts)
+        enddo
+        if (istep.eq.1) then ! bdf1 if at the first step
+            call cem_drift_source  
+            call cem_drift_poisson
+            if (ifsteric) then
+              call cem_drift_sem_bdf1_steric
+            else 
+              call cem_drift_sem_bdf1
+            endif
+        else 
+            call cem_drift_source  
+            call cem_drift_poisson
+            call cem_drift_sem_bdf2
+        endif
+        do ic=1,lcdim
+            call copy(cnlag(1,ic,1),tmp_cN(1,ic),npts)
+        enddo
       elseif (ifbdf1r) then ! Richardson on BDF1
 
         do ic = 1,lcdim ! copy c_{n-1}
@@ -1775,3 +1798,171 @@ c-----------------------------------------------------------------------
       return
       end
 c-----------------------------------------------------------------------
+
+
+C
+c-----------------------------------------------------------------------
+      subroutine setbd(bd,nbd)
+C
+C     Set BDF coefficients
+C
+      real bd(10)
+
+      if (nbd.eq.1) then
+        bd(1) = 1.0
+        bd(2) = 1.0
+      elseif (nbd.eq.2) then
+        bd(1) = 4.0/3.0
+        bd(2) = -1.0/3.0
+        bd(3) = 2.0/3.0
+      elseif (nbd.eq.3) then
+        bd(1) = 18.0/11.0
+        bd(2) = -9.0/11.0
+        bd(3) = 2.0/11.0
+        bd(4) = 6.0/11.0
+      endif
+      return
+      end
+
+c-----------------------------------------------------------------------
+      subroutine setab(ab,nab)
+C
+C     Set BDF coefficients
+C
+      real ab(10)
+
+      if (nab.eq.1) then
+        ab(1) = 1.0
+      elseif (nab.eq.2) then
+        ab(1) = 3.0/2.0
+        ab(2) = -1.0/2.0
+      elseif (nab.eq.3) then
+        ab(1) = 23.0/12.0
+        ab(2) = -16.0/12.0
+        ab(3) = 5.0/12.0
+      endif
+      return
+      end
+
+c---------------------------------------------------------------------
+      subroutine cem_drift_sem_bdf2
+c---------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'POISSON'
+      include 'DRIFT'
+      include 'ZPER'
+      include 'BCS'
+
+      integer ic
+      npts= lx1*ly1*lz1*nelt 
+
+      call cem_drift_sem_bdf2_init
+
+      do ic = 1,lcdim
+        call cem_drift_rhs_bdf2(ic)
+        call cem_drift_lhs_bdf2(ic)
+      enddo
+
+      return
+      end
+
+c---------------------------------------------------------------------
+      subroutine cem_drift_sem_bdf2_init
+c---------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'POISSON'
+      include 'DRIFT'
+      include 'ZPER'
+      include 'BCS'
+
+      integer ic 
+
+      npts= lx1*ly1*lz1*nelt 
+                 
+      do ic = 1,lcdim
+        call cmult2 (h1c(1,ic),diff_n(1,ic),bd(3)*dt,npts)
+        call rone (h2c(1,ic),npts)
+      enddo
+
+      return
+      end
+c---------------------------------------------------------------------
+      subroutine cem_drift_lhs_bdf2(ic)
+c---------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'POISSON'
+      include 'DRIFT'
+      include 'ZPER'
+      include 'BCS'
+
+      integer  isd,imsh,maxit
+      real     tol
+
+      integer ic
+      real wa (lx1*ly1*lz1*lelt)
+      real wb (lx1*ly1*lz1*lelt)
+
+      call bcneusc0 (rescn(1,ic),mu_n(1,ic),cn(1,ic),npts,ic+1,1)
+
+c...  solve cn
+      
+      call bcneusc (wa,npts,ic+1,-1)
+      call col2 (wa,h1c(1,ic),npts)
+      call add2 (h2c(1,ic),wa,npts)
+      call bcdirsc (cn(1,ic),npts,ic+1)
+      call axhelm3 (wa,cn(1,ic),h1c(1,ic),h2c(1,ic),1,1)
+      call sub3 (wb,rescN(1,ic),wa,npts) 
+      call bcneusc (wa,npts,ic+1,1)
+      call col2 (wa,h1c(1,ic),npts) 
+      call add2 (wb,wa,npts) 
+
+c...  set cggo parameters
+
+      isd = 1
+      imsh = 1
+      maxit = 5000
+      tol = param(22)
+
+      call dssum (wb,lx1,ly1,lz1)
+      call col2 (wb,dmask(1,ic+1),npts)
+      call cggo2(wa,wb,h1c(1,ic),h2c(1,ic)
+     $     ,mult,dmask(1,ic+1),imsh,isd,npts,tol,maxit)
+      call add2 (cn(1,ic),wa,npts)
+
+      return
+      end
+c---------------------------------------------------------------------
+      subroutine cem_drift_rhs_bdf2(ic)
+c-----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'POISSON'
+      include 'BCS'
+      real wn(lpts), wp(lpts)
+      real w_h1(lpts),w_h2(lpts)
+      integer ic
+
+      call rzero(w_h2,npts)
+
+      call col3 (wn,cn(1,ic),bm1,npts)
+      call cmult2 (wn,wn,bd(1),npts)
+      call add2s1 (rescN(1,ic),wn,bd(3)*dt,npts)
+      call col3 (wn,cnlag(1,ic,1),bm1,npts)
+      call cmult2 (wn,wn,bd(2),npts)
+      call add2 (rescN(1,ic),wn,npts)
+
+      call add3s2(wn,cn(1,ic),cnlag(1,ic,1),ab(1),ab(2),npts)
+      call col3(w_h1,wn,mu_n(1,ic),npts) ! wk_h1n= mu_n * cN
+      call axhelm3(wn,potent,w_h1,w_h2,1,1)
+      call add2s2 (rescN(1,ic),wn,-1.0*bd(3)*zvalence(ic)*dt,npts)
+
+      return
+      end
