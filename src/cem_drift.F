@@ -166,7 +166,8 @@ c---------------------------------------------------------------------
       if     (ifbdf1) then    
         
         call cem_drift_source  
-        call cem_drift_poisson
+c       call cem_drift_poisson
+        call cem_drift_poisson_eneutral
         if (ifsteric) then
           call cem_drift_sem_bdf1_steric
         else 
@@ -346,6 +347,7 @@ c...  setup helmholtz: [h1 A + h2 B] u_0 = rhs - h1 A u_b
       call sub3 (wb,rhs,wa,npts) ! wb = rhs-wa       
       call bcneusc (wa,npts,1,1)    
       call col2 (wa,d_permit,npts)
+      call col2 (wa,h1,npts)
       call add2 (wb,wa,npts) 
 
 c...  solve u_0 after assemble and mask for boundary on right hand side  
@@ -372,6 +374,99 @@ c...  Compute electric fields cEE=-\grad (potent)
 
       return
       end
+
+c-----------------------------------------------------------------------
+      subroutine cem_drift_poisson_eneutral
+c----------------------------------------------------------------------
+      implicit none
+      include 'SIZE'
+      include 'TOTAL'
+      include 'DRIFT'
+      include 'POISSON'
+
+      real wa(lx1*ly1*lz1*lelt)
+      real wb(lx1*ly1*lz1*lelt)
+      real wn(lpts), wp(lpts)
+      real w_h1(lpts),w_h2(lpts)
+
+      integer icalled
+      integer ic
+      save icalled
+      data icalled/0/
+
+      integer isd,imsh,maxit
+      real    tol
+
+c...  set rhs = -\sum z_k D_k \Delta c_k
+      call rzero(w_h2,npts)
+      call rzero(rhs,npts)
+      call rzero(wn,npts)
+      do ic = 1,lcdim
+        call cmult2(w_h1,diff_n(1,ic),-1.0*zvalence(ic),npts)
+        call axhelm3(wn,cn(1,ic),w_h1,w_h2,1,1)
+        call add2(rhs,wn,npts)
+      enddo
+
+c...  setup helmholtz: [h1 A + h2 B] u = rhs where u = u_0+u_b
+      call rzero(h1,npts)
+      if (icalled.eq.0) then
+        call copy (mask,dmask(1,1),npts)
+c       call copy (h1,d_permit,npts)
+        icalled = 1
+      endif
+c       h1 = \sum z_k^2 u_k F c_k
+      call rzero(wn,npts)
+      call rzero (h1,npts)
+      do ic = 1,lcdim
+        call col3(wn,mu_n(1,ic),cn(1,ic),npts) ! assume z_k^2 = 1
+        call add2(h1,wn,npts) 
+      enddo
+      call rzero (h2,npts)
+
+      isd = 1
+      imsh = 1
+      maxit = 5000
+      tol = param(22)
+
+c...  setup helmholtz: [h1 A + h2 B] u_0 = rhs - h1 A u_b
+      call bcneusc (wa,npts,1,-1)    
+c     call col2 (wa,d_permit,npts)
+      call col2 (wa,h1,npts)
+      call add2 (h2,wa,npts)
+      call bcdirsc (potent,npts,1)    
+      call axhelm3 (wa,potent,h1,h2,1,1) 
+      call sub3 (wb,rhs,wa,npts) ! wb = rhs-wa       
+      call bcneusc (wa,npts,1,1)    
+c     call col2 (wa,d_permit,npts)
+      call col2 (wa,h1,npts)
+      call add2 (wb,wa,npts) 
+
+c...  solve u_0 after assemble and mask for boundary on right hand side  
+      call dssum (wb,lx1,ly1,lz1)
+      call col2 (wb,mask,npts)
+
+      if (ifsemg) then
+        call copy      (wa,wb,npts)
+        call hmh_gmres_mg (wa,h1,h2,mult,mask,maxit)
+      else
+        call cggo2 (wa,wb,h1,h2,mult,mask,imsh,isd,npts,tol,maxit)
+      endif
+
+
+c...  add u = u_0 + u_b (u_0= potent, u_b=potent_b if applicable)  
+      call add2(potent,wa,npts)
+
+c...  Compute electric fields cEE=-\grad (potent)
+      call cem_drift_grad(gradp(1,1),gradp(1,2),gradp(1,3),potent)
+
+      call chsign(gradp(1,1),npts)
+      call chsign(gradp(1,2),npts)
+      call chsign(gradp(1,3),npts)
+
+      return
+      end
+
+
 c----------------------------------------------------------------------
       subroutine cem_drift_grad(w1,w2,w3,u1)
 c----------------------------------------------------------------------
@@ -450,6 +545,7 @@ c---------------------------------------------------------------------
       include 'BCS'
 
       integer ic
+      real wa (lx1*ly1*lz1*lelt)
       npts= lx1*ly1*lz1*nelt 
 
       call cem_drift_sem_bdf1_init
@@ -458,6 +554,14 @@ c---------------------------------------------------------------------
         call cem_drift_rhs_bdf1(ic)
         call cem_drift_lhs_bdf1(ic)
       enddo
+      
+      ! Correction step for neutrality... only a hard fix
+      call rzero(wa,npts)
+      do ic = 2,lcdim 
+        call add2s2(wa,cn(1,ic),zvalence(ic),npts)
+      enddo
+      call cmult2(cn(1,1),wa,-1.0*zvalence(1),npts) 
+      call rzero(wa,npts)
 
       return
       end

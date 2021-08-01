@@ -19,7 +19,6 @@
 #define prod_mode
 //###############################################################################
 
-char filename[kMaxPathLen];
 int Little_endian = -1;
 
 //int DEBUG_FLAG = 1;

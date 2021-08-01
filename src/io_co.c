@@ -11,11 +11,6 @@
 
 #include "io_mpiutil.h"
 
-
-#ifdef MPI
-MPI_File mfile;
-#endif
-
 //char mFilename[100];
 //char rstFilename[100];
 

@@ -10,7 +10,12 @@
 #include "io_rdtsc.h"
 #include "io_util.h"
 
+#ifdef MPI
+extern MPI_File mfile;
+#endif
+
 extern char rstFilename[kMaxPathLen];
+extern char filename[kMaxPathLen];
 extern char mFilename[kMaxPathLen];
 extern char rbFilename[kMaxPathLen];
 extern char rbasciiFilename[kMaxPathLen];

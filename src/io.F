@@ -201,7 +201,9 @@ c     If `iooption = 0` no output/restart files are generated
             call vtk_nonswap_field( sUr,sQr(1,1),sQi(1,1),vtkout4)
 #elif defined DRIFT
             call vtk_nonswap_field(cN(1,1),cN(1,2),potent,vtkout1)
-            call vtk_nonswap_field(scN(1,1),scN(1,2),spotent,vtkout2)
+c           call vtk_nonswap_field(scN(1,1),scN(1,2),spotent,vtkout2)
+            ! TODO: hardcoded here to output more species...
+            call vtk_nonswap_field(cN(1,3),cN(1,4),potent,vtkout2)
             call vtk_nonswap_field(cnj(1,1,1),cnj(1,2,1),cnj(1,3,1)
      $           ,vtkout3)
             call vtk_nonswap_field(cnj(1,1,2),cnj(1,2,2),cnj(1,3,2)
