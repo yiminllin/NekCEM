@@ -95,6 +95,25 @@ c-----------------------------------------------------------------------
 
       endif
 
+      if (ncemface_pec(4).ge.1)  then ! third field K
+
+         do i=1,ncemface_pec(4)
+            j = cemface_pec(i,4)
+            i0 = cemface(j)
+            cn(i0,3) = 0.0
+         enddo
+      endif
+
+      if (ncemface_pec(5).ge.1)  then ! fourth field OH
+
+         do i=1,ncemface_pec(5)
+            j = cemface_pec(i,5)
+            i0 = cemface(j)
+            cN(i0,4) = 0.0
+         enddo
+
+      endif
+
       return
       end
 
